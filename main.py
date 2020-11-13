@@ -2,7 +2,9 @@
 import time
 from typing import List
 from dataclasses import dataclass
+import random
 
+import blessed
 
 @dataclass
 class Task:
@@ -20,33 +22,99 @@ class Column:
     tasks: List[Task]
 
 class Game:
-    def __init__(self, stages, cycle_time):
+    def __init__(self, terminal, stages, cycle_time, min_time, max_time):
         self._tasks = []
         self._cycle_time = cycle_time
         self._running = False
         self._columns: List[Column] = []
         self._stages = stages
+        self._term = terminal
+        print(self._term.home + self._term.clear)
+        self._number_of_tasks = 0
+        self._next_task_name = 'A'
+        self._min_time = min_time
+        self._max_time = max_time
 
         col_number = 0
         for i in range(stages):
 
-            column = Column('A', False, col_number, [])
+            column = Column(f'DOING {i}', False, col_number, [])
             self._columns.append(column)
             col_number += 1
 
-            column = Column('A', True, col_number, [])
+            column = Column(f'DONE {i}', True, col_number, [])
             self._columns.append(column)
             col_number += 1
-
 
     def start(self):
         self._running = True
         while self._running:
-            time.sleep(self._cycle_time)
+            self._wait()
             self._tick()
+            self._redraw()
+
+    def _gen_task_name(self):
+        self._number_of_tasks += 1
+        return f'TASK #{self._number_of_tasks}'
+
+    def _wait(self):
+        if self._cycle_time > 0:
+            time.sleep(self._cycle_time)
+        else:
+            self._print_xy(0, 30, '')
+            input('->')
 
     def _choose_time(self):
-        return 5
+        if self._min_time == self._max_time:
+            return self._min_time
+        else:
+            return random.randrange(self._min_time, self._max_time)
+
+    def _print_xy(self, x, y, char):
+        print(self._term.move_xy(x, y) + char)
+
+    def _draw_square(self, left, top, width, height):
+        self._print_xy(left, top, '+')
+        self._print_xy(left + width, top, '+')
+        self._print_xy(left, top + height, '+')
+        self._print_xy(left + width, top + height, '+')
+        for x in range(left + 1, left + width):
+            self._print_xy(x, top, '-')
+            self._print_xy(x, top + height, '-')
+        for y in range(top + 1, top + height):
+            self._print_xy(left, y, '|')
+            self._print_xy(left + width, y, '|')
+
+    def _draw_vertical_line(self, column, height, char):
+        for i in range(height):
+            print(self._term.move_xy(column, i) + char)
+
+    def _draw_task(self, column, height, task: Task):
+        top = height * 4 + 2
+        left = column * 15 + 3
+        self._draw_square(left, top, 10, 3)
+        self._print_xy(left + 1, top + 1, str(task.name))
+        self._print_xy(left + 1, top + 2, str(task.time_left))
+
+    def _draw_empty_columns(self, number, height):
+        for i in range(1, number):
+            self._draw_vertical_line(i * 15, height, '|')
+
+    def _draw_col_title(self, col_number, column: Column):
+        self._print_xy(col_number * 15 + 4, 0, column.name)
+
+    def _redraw(self):
+        print(self._term.home + self._term.clear)
+        self._draw_empty_columns(self._stages * 2, 20)
+        col_number = 0
+        for col in self._columns:
+            self._draw_col_title(col_number, col)
+            line_number = 0
+            for task in col.tasks:
+                if line_number < 7:
+                    self._draw_task(col_number, line_number, task)
+                line_number += 1
+            col_number += 1
 
     def _tick(self):
         # update tasks on each column in reverse order
@@ -87,11 +155,12 @@ class Game:
         first_column = self._columns[0]
         if len(first_column.tasks) == 0:
             # create new task
-            task = Task('A', self._choose_time(), 0, False, False)
+            task = Task(self._gen_task_name(), self._choose_time(), 0, False, False)
             first_column.tasks.append(task)
 
 if __name__ == "__main__":
-    game = Game(2, 1)
+    term = blessed.Terminal()
+    game = Game(term, 3, 0, 2, 15)
     game.start()
 
 
