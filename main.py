@@ -1,15 +1,13 @@
 
+from sys import argv
 import time
 from typing import Dict, List
 from dataclasses import dataclass
 import random
 
 import blessed
-import pandas as pd 
-import numpy as np 
 import matplotlib.pyplot as plt
-import matplotlib
-
+import argparse
 
 COLUMN_WIDTH = 14
 COLUMN_HEIGHT = 20
@@ -18,8 +16,9 @@ COLUMN_TITLES_LEFT_OFFSET = 4
 MAX_TASKS_PER_COLUMN = 7
 TASK_WIDTH = 10
 TASK_HEIGHT = 3
-FIRST_TASK_TOP_OFFSET = 4
+FIRST_TASK_TOP_OFFSET = 3
 FIRST_TASK_LEFT_OFFSET = 2
+PROMPT_TOP = 24
 
 @dataclass
 class Task:
@@ -43,7 +42,6 @@ class Column:
 class KPIs:
     clock: int
     lead_time: float
-    cycle_time: float
     finished_tasks: int
     wip: int
 
@@ -85,8 +83,8 @@ class Draw:
         self._draw_kpis(kpis)
 
     def wait_input(self):
-        self._print_xy(0, 30, '')
-        input('->')
+        self._print_xy(0, PROMPT_TOP, '')
+        input('Press ENTER->')
 
     def _print_xy(self, x, y, char):
         print(self._term.move_xy(x, y) + char)
@@ -129,7 +127,7 @@ class Draw:
 
     def _draw_kpis(self, kpis: KPIs):
         self._print_xy(0, 0, f'Clock: {kpis.clock:4d} Lead Time: {kpis.lead_time:5.2f} ' 
-            + f'Cycle Time: {kpis.cycle_time:5.2f} Finished: {kpis.finished_tasks:4d} WIP: {kpis.wip:2d}')
+            + f'Finished: {kpis.finished_tasks:4d} WIP: {kpis.wip:2d}')
 
 class Game:
     def __init__(self, terminal, stages, cycle_time, min_time, max_time, wip, bottleneck_factor):
@@ -144,7 +142,6 @@ class Game:
         self._clock = 0
         self._cfd = []
         self._avg_lead_time: float = 0.0
-        self._avg_cycle_time: float = 0.0
         self._wip = wip
         self._finished_tasks = 0
         self._bottleneck_factor = bottleneck_factor
@@ -171,7 +168,7 @@ class Game:
             self._clock += 1
             self._wait()
             self._tick()
-            kpis = KPIs(self._clock, self._avg_lead_time, self._avg_cycle_time, self._finished_tasks, self._wip)
+            kpis = KPIs(self._clock, self._avg_lead_time, self._finished_tasks, self._wip)
             self._draw.redraw(self._columns, self._tasks, kpis)
             self._statistics.add(kpis)
             if self._clock % self._plot_interval == 0:
@@ -191,13 +188,6 @@ class Game:
                 sum_lead_times = sum_lead_times + (task.finished - task.started)
                 count_tasks += 1
         self._avg_lead_time = 0.0 if count_tasks == 0 else sum_lead_times / count_tasks
-
-    def _calculate_cycle_time(self):
-        count_tasks = 0
-        for task in self._tasks:
-            if task.finished != 0:
-                count_tasks += 1
-        self._avg_cycle_time = 0.0 if count_tasks == 0 else self._clock / count_tasks
 
     def _calculate_finished_tasks(self):
         count_tasks = 0
@@ -289,7 +279,6 @@ class Game:
 
         self._calculate_cfd()
         self._calculate_lead_time()
-        self._calculate_cycle_time()
         self._calculate_finished_tasks()
 
         first_action_empty = len(self._columns[0].tasks) == 0
@@ -302,8 +291,19 @@ class Game:
             self._tasks.append(task)
 
 if __name__ == "__main__":
+
+    print('argv' + str(argv))
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-n", "--num_stages", help='number of activities', required=False, type=int, default=3)
+    parser.add_argument("-c", "--cycle_time", help='seconds between cycles (0 = wait key)', type=int, default=0)
+    parser.add_argument("-m", "--min_duration", help='min activity duration', type=int, default=5)
+    parser.add_argument("-x", "--max_duration", help='max activity duration', type=int, default=15)
+    parser.add_argument("-w", "--wip", help='work in progress limit (0 = no limit)', type=int, default=0)
+    parser.add_argument("-b", "--bottleneck_factor", help='factor to multiply activity time on bottleneck', type=float, default=1.0)
+    args = parser.parse_args()
     term = blessed.Terminal()
-    game = Game(term, 3, 0, 5, 15, 2, 1.30)
+    game = Game(term, args.num_stages, args.cycle_time, args.min_duration, args.max_duration, args.wip, args.bottleneck_factor)
     game.start()
 
 
