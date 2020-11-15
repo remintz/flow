@@ -53,10 +53,15 @@ class KPIs:
     lead_time: float
     finished_tasks: int
     wip: int
+    cfd: List[int]
 
 class Statistics:
     def __init__(self):
         self._series = {}
+
+    def set_column_names(self, column_names: List[str]):
+        column_names.reverse()
+        self._column_names = column_names
 
     def add(self, kpis: KPIs):
         self._series[kpis.clock] = kpis
@@ -68,7 +73,29 @@ class Statistics:
         plt.plot(lead_time)
         plt.show()
         plt.savefig(f'lead_time_{id}.png')
+        plt.clf()
         
+    def plot_cfd(self, id: int):
+        data = []
+        x = []
+        for clock, kpi in enumerate(self._series.values()):
+            x.append(clock)
+
+            cfd = kpi.cfd
+            if len(data) == 0:
+                for i in range(len(cfd)):
+                    data.append([])
+
+            # the last column (DONE DONE) is not included on the cfd
+            for i in range(len(cfd)):
+                reversed_index = (len(cfd)-1) - i
+                data[i].append(cfd[reversed_index])
+        plt.stackplot(x, data, labels=self._column_names)
+        plt.legend(loc='upper left')
+        plt.show()
+        plt.savefig(f'cfd_{id}.png')
+        plt.clf()
+
 
 class Draw:
     def __init__(self, terminal):
@@ -175,15 +202,23 @@ class Game:
         self._plot_interval = 100
 
         col_number = 0
+        column_names = []
         for i in range(stages):
             letter = chr(i + ord('A'))
-            column = Column(f'{letter} DOING', False, col_number, [])
+
+            column_name = f'{letter} DOING'
+            column = Column(column_name, False, col_number, [])
             self._columns.append(column)
+            column_names.append(column_name)
             col_number += 1
 
-            column = Column(f'{letter} DONE', True, col_number, [])
+            column_name = f'{letter} DONE'
+            column = Column(column_name, True, col_number, [])
             self._columns.append(column)
+            column_names.append(column_name)
             col_number += 1
+
+        self._statistics.set_column_names(column_names)
 
         self._bottleneck_column = len(self._columns) - 3
 
@@ -193,17 +228,19 @@ class Game:
             self._clock += 1
             self._wait()
             self._tick()
-            kpis = KPIs(self._clock, self._avg_lead_time, self._finished_tasks, self._wip)
+            kpis = KPIs(self._clock, self._avg_lead_time, self._finished_tasks, self._wip, self._cfd)
             self._draw.redraw(self._columns, self._tasks, kpis)
             self._statistics.add(kpis)
             if self._clock % self._plot_interval == 0:
                 self._statistics.plot_lead_time(self._clock)
+                self._statistics.plot_cfd(self._clock)
 
     def _calculate_cfd(self):
         # count # of tasks in each column
         count_col = [0] * len(self._columns)
         for task in self._tasks:
             count_col[task.current_column] += 1
+        self._cfd = count_col
 
     def _calculate_lead_time(self):
         sum_lead_times = 0
@@ -302,10 +339,6 @@ class Game:
                 column.tasks = column_tasks
             col_number -= 1
 
-        self._calculate_cfd()
-        self._calculate_lead_time()
-        self._calculate_finished_tasks()
-
         first_action_empty = len(self._columns[0].tasks) == 0
         num_tasks_first_stage = len(self._columns[0].tasks) + len(self._columns[1].tasks)
         wip_ok = (num_tasks_first_stage < self._wip) or (self._wip == 0)
@@ -315,6 +348,11 @@ class Game:
             self._columns[0].tasks.append(task)
             self._tasks.append(task)
 
+        self._calculate_cfd()
+        self._calculate_lead_time()
+        self._calculate_finished_tasks()
+
+
 if __name__ == "__main__":
 
     print('argv' + str(argv))
@@ -322,8 +360,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--num_stages", help='number of activities', required=False, type=int, default=3)
     parser.add_argument("-c", "--cycle_time", help='seconds between cycles (0 = wait key)', type=int, default=0)
-    parser.add_argument("-m", "--min_duration", help='min activity duration', type=int, default=5)
-    parser.add_argument("-x", "--max_duration", help='max activity duration', type=int, default=15)
+    parser.add_argument("-m", "--min_duration", help='min activity duration', type=int, default=2)
+    parser.add_argument("-x", "--max_duration", help='max activity duration', type=int, default=10)
     parser.add_argument("-w", "--wip", help='work in progress limit (0 = no limit)', type=int, default=0)
     parser.add_argument("-b", "--bottleneck_factor", help='factor to multiply activity time on bottleneck', type=float, default=1.0)
     args = parser.parse_args()
