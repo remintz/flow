@@ -1,7 +1,7 @@
 
 from sys import argv
 import time
-from typing import Dict, List
+from typing import Dict, List, Mapping
 from dataclasses import dataclass
 import random
 
@@ -19,6 +19,15 @@ TASK_HEIGHT = 3
 FIRST_TASK_TOP_OFFSET = 3
 FIRST_TASK_LEFT_OFFSET = 2
 PROMPT_TOP = 24
+
+
+TERMINAL = blessed.Terminal()
+
+TASK_COLOR = TERMINAL.white
+TASK_WAIT_COLOR = TERMINAL.yellow
+TASK_FINISH_COLOR = TERMINAL.green
+GRID_COLOR = TERMINAL.blue
+KPI_COLOR = TERMINAL.white_reverse
 
 @dataclass
 class Task:
@@ -70,7 +79,7 @@ class Draw:
         print(self._term.home + self._term.clear)
         self._columns = columns
         num_columns = len(self._columns)
-        self._draw_empty_columns(num_columns, COLUMN_WIDTH)
+        self._draw_empty_columns(num_columns, COLUMN_HEIGHT)
         col_number = 0
         for col in self._columns:
             self._draw_col_title(col_number, col)
@@ -78,6 +87,11 @@ class Draw:
             for task in col.tasks:
                 if line_number < MAX_TASKS_PER_COLUMN:
                     self._draw_task(col_number, line_number, task)
+                else:
+                    left = col_number * COLUMN_WIDTH + FIRST_TASK_LEFT_OFFSET
+                    top = line_number * TASK_HEIGHT + FIRST_TASK_TOP_OFFSET + 1
+                    self._print_xy(left, top, f'+ {len(col.tasks) - MAX_TASKS_PER_COLUMN}')
+                    break
                 line_number += 1
             col_number += 1
         self._draw_kpis(kpis)
@@ -86,48 +100,59 @@ class Draw:
         self._print_xy(0, PROMPT_TOP, '')
         input('Press ENTER->')
 
-    def _print_xy(self, x, y, char):
-        print(self._term.move_xy(x, y) + char)
+    def _print_xy(self, x, y, char, bold=False, color=None):
+        out = char
+        if bold:
+            out = self._term.bold + out + self._term.normal
+        if color:
+            out = color(out)
+        print(self._term.move_xy(x, y) + out)
 
-    def _draw_square(self, left, top, width, height):
-        self._print_xy(left, top, '+')
-        self._print_xy(left + width, top, '+')
-        self._print_xy(left, top + height, '+')
-        self._print_xy(left + width, top + height, '+')
+    def _draw_square(self, left, top, width, height, color=None):
+        self._print_xy(left, top, '+', color=color)
+        self._print_xy(left + width, top, '+', color=color)
+        self._print_xy(left, top + height, '+', color=color)
+        self._print_xy(left + width, top + height, '+', color=color)
         for x in range(left + 1, left + width):
-            self._print_xy(x, top, '-')
-            self._print_xy(x, top + height, '-')
+            self._print_xy(x, top, '-', color=color)
+            self._print_xy(x, top + height, '-', color=color)
         for y in range(top + 1, top + height):
-            self._print_xy(left, y, '|')
-            self._print_xy(left + width, y, '|')
+            self._print_xy(left, y, '|', color=color)
+            self._print_xy(left + width, y, '|', color=color)
 
     def _draw_vertical_line(self, column, top, height, char):
         for i in range(height):
-            print(self._term.move_xy(column, i + top) + char)
+            self._print_xy(column, i + top, char, color=GRID_COLOR)
 
     def _draw_task(self, column, height, task: Task):
         top = height * TASK_HEIGHT + FIRST_TASK_TOP_OFFSET
         left = column * COLUMN_WIDTH + FIRST_TASK_LEFT_OFFSET
-        self._draw_square(left, top, TASK_WIDTH, TASK_HEIGHT)
-        self._print_xy(left + 1, top + 1, str(task.name))
+
+        color = TASK_COLOR
         if task.finished > 0:
             out = 'finished'
+            color = TASK_FINISH_COLOR
         elif task.time_left > 0:
             out = str(task.time_left)
         else:
             out = 'waiting'
-        self._print_xy(left + 1, top + 2, out)
+            color = TASK_WAIT_COLOR
+
+        self._draw_square(left, top, TASK_WIDTH, TASK_HEIGHT, color=color)
+        self._print_xy(left + 1, top + 1, str(task.name), color=color)
+        self._print_xy(left + 1, top + 2, out, color=color)
 
     def _draw_empty_columns(self, number, height):
         for i in range(1, number):
             self._draw_vertical_line(i * COLUMN_WIDTH, COLUMNS_TOP_OFFSET, height, '|')
 
     def _draw_col_title(self, col_number, column: Column):
-        self._print_xy(col_number * COLUMN_WIDTH + COLUMN_TITLES_LEFT_OFFSET, COLUMNS_TOP_OFFSET, column.name)
+        self._print_xy(col_number * COLUMN_WIDTH + COLUMN_TITLES_LEFT_OFFSET, COLUMNS_TOP_OFFSET, column.name, bold=True, color=GRID_COLOR)
 
     def _draw_kpis(self, kpis: KPIs):
+
         self._print_xy(0, 0, f'Clock: {kpis.clock:4d} Lead Time: {kpis.lead_time:5.2f} ' 
-            + f'Finished: {kpis.finished_tasks:4d} WIP: {kpis.wip:2d}')
+            + f'Finished: {kpis.finished_tasks:4d} WIP: {kpis.wip:2d}', color=KPI_COLOR)
 
 class Game:
     def __init__(self, terminal, stages, cycle_time, min_time, max_time, wip, bottleneck_factor):
